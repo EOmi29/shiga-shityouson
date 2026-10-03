@@ -62,6 +62,23 @@ body.mode-view #info{display:block}
 #info .rd{font-size:.95rem;color:#607d8b;min-height:1.3em}
 #info label{display:flex;align-items:center;gap:6px;margin-top:6px;font-size:.85rem;cursor:pointer}
 #info .hint{font-size:.78rem;color:#78909c;margin-top:4px}
+/* ---- 市町の特色カード (view mode) ---- */
+#info{max-height:calc(100% - 8px);overflow-y:auto;touch-action:pan-y}
+#info.hasf{width:270px;max-width:270px}
+#feat{display:none;margin-top:8px;border-top:2px solid #e0ece7;padding-top:6px}
+#feat .fi{margin-top:8px}
+#feat .fi img{display:block;width:100%;aspect-ratio:4/3;object-fit:cover;border-radius:10px;background:#e8ecea}
+#feat .fi.noimg img{display:none}
+#feat .fh{display:flex;align-items:center;gap:6px;margin-top:5px;font-size:.98rem;line-height:1.7;font-weight:800;color:#37474f}
+#feat .tag{flex:none;font-size:.7rem;font-weight:700;line-height:1.5;padding:1px 8px;border-radius:999px;color:#fff;background:#78909c}
+#feat .tag rt{color:#fff;font-size:.55em}
+#feat .tag.k-建物{background:#8d6e63}
+#feat .tag.k-景色{background:#2e7d6b}
+#feat .tag.k-文化{background:#c2185b}
+#feat .tag.k-自然{background:#558b2f}
+#feat .tag.k-食べもの{background:#ef6c00}
+#feat .tag.k-まつり{background:#6a1b9a}
+#feat p{margin:3px 0 0;font-size:.84rem;line-height:1.95;color:#455a64}
 /* ---- tray ---- */
 .tray{touch-action:pan-y;flex:1;min-height:0;overflow-y:auto;display:grid;grid-template-columns:repeat(2,1fr);gap:8px;align-content:start;padding:2px}
 .chip{border:2px solid #b0bec5;border-radius:12px;background:#fafafa;display:flex;flex-direction:column;align-items:center;justify-content:center;
@@ -103,6 +120,10 @@ body.mode-view #info{display:block}
   .chip.name{width:auto;min-width:96px}
   .chip svg{width:64px;height:64px}
   #info{max-width:170px;padding:6px 10px}
+  #info.hasf{width:210px;max-width:210px}
+  #feat .fi img{aspect-ratio:16/9}
+  #feat p{font-size:.78rem;line-height:1.85}
+  #feat .fh{font-size:.9rem}
   #info .nm{font-size:1.2rem}
   body.mode-type #panel{height:auto}
 }
@@ -136,6 +157,7 @@ ruby rt{font-size:.58em;font-weight:500;color:#546e7a;letter-spacing:0}
     <div id="info">
       <div class="nm" id="infoNm">タップしてね</div>
       <div class="rd" id="infoRd">市町村をタップすると名前が出ます</div>
+      <div id="feat"></div>
     </div>
     <div id="done"><div class="card">
       <h2 id="doneTitle">ぜんぶ できた！</h2><p id="doneMsg"></p>
@@ -271,6 +293,22 @@ function bindChip(c,hd){
   c.addEventListener('pointercancel',e=>finish(e,true));
 }
 
+/* ---------- 市町の特色データ ----------
+   写真は images/<id><番号>.jpg 。1つ目の項目が hikone1.jpg、2つ目が hikone2.jpg … と対応します。
+   項目を増やすときは、配列に {k:'種類',n:'名前',t:'説明'} を足して、写真の番号をつづけてください。
+   ふりがなは 漢字《よみ》 の形で書くと、自動で表示されます。 */
+const FEATURES={"otsu": [{"k": "建物", "n": "比叡山延暦寺《ひえいざんえんりゃくじ》", "t": "比叡山《ひえいざん》にある大《おお》きなお寺《てら》で、世界遺産《せかいいさん》です。1200年《ねん》以上《いじょう》の歴史《れきし》があります。"}, {"k": "建物", "n": "石山寺《いしやまでら》", "t": "紫式部《むらさきしきぶ》が「源氏物語《げんじものがたり》」を書《か》きはじめたと伝《つた》わるお寺《てら》です。"}], "hikone": [{"k": "建物", "n": "彦根城《ひこねじょう》", "t": "国宝《こくほう》の天守《てんしゅ》が残《のこ》るお城《しろ》。江戸時代《えどじだい》、井伊家《いいけ》が治《おさ》めていました。"}, {"k": "文化", "n": "ひこにゃん", "t": "彦根城《ひこねじょう》のお城《しろ》まつりから生《う》まれた、白《しろ》いネコのキャラクターです。"}], "nagahama": [{"k": "建物", "n": "黒壁《くろかべ》スクエア", "t": "古《ふる》い銀行《ぎんこう》の建物《たてもの》を生《い》かした、ガラス工芸《こうげい》の町《まち》なみです。"}, {"k": "景色", "n": "竹生島《ちくぶじま》", "t": "琵琶湖《びわこ》に浮《う》かぶ小《ちい》さな島《しま》。お寺《てら》や神社《じんじゃ》があり、船《ふね》で行《い》きます。"}], "omihachiman": [{"k": "景色", "n": "八幡堀《はちまんぼり》", "t": "むかしの水路《すいろ》が残《のこ》る町《まち》なみ。時代劇《じだいげき》の撮影《さつえい》にも使《つか》われます。"}, {"k": "景色", "n": "水郷《すいごう》めぐり", "t": "ヨシ原《はら》の水路《すいろ》を、手《て》こぎの船《ふね》でゆっくり進《すす》みます。"}], "kusatsu": [{"k": "建物", "n": "草津宿本陣《くさつじゅくほんじん》", "t": "江戸時代《えどじだい》の旅人《たびびと》が泊《と》まった宿《やど》。東海道《とうかいどう》と中山道《なかせんどう》が分《わ》かれる宿場町《しゅくばまち》でした。"}, {"k": "自然", "n": "水生植物公園《すいせいしょくぶつこうえん》みずの森《もり》", "t": "琵琶湖《びわこ》のほとりにあり、夏《なつ》にはハスの花《はな》がたくさん咲《さ》きます。"}], "moriyama": [{"k": "自然", "n": "ホタル", "t": "きれいな水《みず》の川《かわ》でゲンジボタルが光《ひか》ります。「ほたるの街《まち》」として知《し》られます。"}, {"k": "建物", "n": "琵琶湖大橋《びわこおおはし》", "t": "守山市《もりやまし》と大津市《おおつし》を結《むす》ぶ、琵琶湖《びわこ》をわたる大《おお》きな橋《はし》です。"}], "ritto": [{"k": "文化", "n": "栗東《りっとう》トレーニング・センター", "t": "全国《ぜんこく》から競走馬《けいそうば》が集《あつ》まり、レースに向《む》けて毎日《まいにち》トレーニングしています。"}, {"k": "景色", "n": "金勝《こんぜ》アルプス", "t": "岩《いわ》がごつごつした山《やま》で、ハイキングが人気《にんき》です。"}], "koka": [{"k": "文化", "n": "甲賀《こうか》の忍者《にんじゃ》", "t": "むかし、忍術《にんじゅつ》で知《し》られた「甲賀流《こうかりゅう》」の里《さと》です。忍者《にんじゃ》の屋敷《やしき》も残《のこ》っています。"}, {"k": "文化", "n": "信楽焼《しがらきやき》", "t": "たぬきの置物《おきもの》で有名《ゆうめい》な焼《や》き物《もの》。土《つち》のあたたかい色《いろ》あいが特長《とくちょう》です。"}], "yasu": [{"k": "景色", "n": "三上山《みかみやま》（近江富士《おうみふじ》）", "t": "形《かたち》が富士山《ふじさん》に似《に》ていることから「近江富士《おうみふじ》」とよばれます。"}, {"k": "文化", "n": "銅鐸《どうたく》", "t": "むかしの青銅《せいどう》の道具《どうぐ》。野洲《やす》では日本最大《にほんさいだい》の銅鐸《どうたく》が見《み》つかりました。"}], "konan": [{"k": "建物", "n": "湖南三山《こなんさんざん》", "t": "常楽寺《じょうらくじ》・長寿寺《ちょうじゅじ》・善水寺《ぜんすいじ》の3つのお寺《てら》。どれも国宝《こくほう》の建物《たてもの》があります。"}], "takashima": [{"k": "景色", "n": "メタセコイア並木《なみき》", "t": "約《やく》2.4kmつづく並木道《なみきみち》。秋《あき》の紅葉《こうよう》や冬《ふゆ》の雪景色《ゆきげしき》が人気《にんき》です。"}, {"k": "景色", "n": "白鬚神社《しらひげじんじゃ》の湖中鳥居《こちゅうとりい》", "t": "琵琶湖《びわこ》の中《なか》に立《た》つ大《おお》きな鳥居《とりい》で、「近江《おうみ》の厳島《いつくしま》」とよばれます。"}], "higashiomi": [{"k": "景色", "n": "永源寺《えいげんじ》の紅葉《こうよう》", "t": "山《やま》あいのお寺《てら》で、秋《あき》には境内《けいだい》がまっ赤《か》にそまります。"}, {"k": "まつり", "n": "東近江大凧《ひがしおうみおおだこ》まつり", "t": "たたみ100枚《まい》ほどもある大《おお》きなたこを、みんなで空《そら》にあげます。"}], "maibara": [{"k": "自然", "n": "伊吹山《いぶきやま》", "t": "滋賀県《しがけん》でいちばん高《たか》い山《やま》（1377m）。山《やま》にはたくさんの高山植物《こうざんしょくぶつ》があります。"}, {"k": "自然", "n": "醒井《さめがい》の梅花藻《ばいかも》", "t": "きれいな川《かわ》の水《みず》の中《なか》に、夏《なつ》になると白《しろ》い小《ちい》さな花《はな》がさきます。"}], "hino": [{"k": "自然", "n": "鎌掛《かまかけ》のシャクナゲ", "t": "春《はる》、山《やま》の斜面《しゃめん》いっぱいにシャクナゲの花《はな》がさきます。"}, {"k": "まつり", "n": "日野祭《ひのまつり》", "t": "豪華《ごうか》にかざった曳山《ひきやま》が町《まち》を進《すす》む、伝統《でんとう》のお祭《まつ》りです。"}], "ryuo": [{"k": "食べもの", "n": "近江牛《おうみぎゅう》", "t": "日本三大和牛《にほんさんだいわぎゅう》のひとつ。竜王町《りゅうおうちょう》は近江牛《おうみぎゅう》の産地《さんち》として知《し》られます。"}, {"k": "建物", "n": "三井《みつい》アウトレットパーク滋賀竜王《しがりゅうおう》", "t": "県内外《けんないがい》から買《か》い物《もの》に人《ひと》が来《く》る、大《おお》きな商業施設《しょうぎょうしせつ》です。"}], "aisho": [{"k": "建物", "n": "金剛輪寺《こんごうりんじ》", "t": "紅葉《こうよう》の名所《めいしょ》のお寺《てら》。参道《さんどう》にならぶ地蔵《じぞう》が有名《ゆうめい》です。"}, {"k": "文化", "n": "びんてまり", "t": "愛荘町《あいしょうちょう》につたわる、色《いろ》あざやかな手作《てづく》りのまりです。"}], "toyosato": [{"k": "建物", "n": "旧豊郷小学校校舎《きゅうとよさとしょうがっこうこうしゃ》", "t": "おしゃれな洋風《ようふう》の校舎《こうしゃ》。ヴォーリズという建築家《けんちくか》が設計《せっけい》しました。"}], "koura": [{"k": "建物", "n": "西明寺《さいみょうじ》", "t": "国宝《こくほう》の本堂《ほんどう》と三重塔《さんじゅうのとう》があり、紅葉《こうよう》の名所《めいしょ》としても有名《ゆうめい》です。"}, {"k": "文化", "n": "甲良宗広《こうらむねひろ》", "t": "甲良町《こうらちょう》出身《しゅっしん》の大工《だいく》の一族《いちぞく》。日光東照宮《にっこうとうしょうぐう》の建築《けんちく》にもかかわりました。"}], "taga": [{"k": "建物", "n": "多賀大社《たがたいしゃ》", "t": "「お多賀《たが》さん」とよばれ、昔《むかし》から多《おお》くの人《ひと》がおまいりに来《く》る神社《じんじゃ》です。"}, {"k": "自然", "n": "河内風穴《かわちふうけつ》", "t": "岩《いわ》のあいだからひんやりした風《かぜ》がふく、鍾乳洞《しょうにゅうどう》です。"}], "biwako": [{"k": "自然", "n": "日本一《にほんいち》大《おお》きな湖《みずうみ》", "t": "滋賀県《しがけん》の面積《めんせき》の約《やく》6分《ぶん》の1をしめ、約《やく》400万年《まんねん》の歴史《れきし》があります。"}, {"k": "自然", "n": "琵琶湖《びわこ》の生《い》きもの", "t": "ビワマスなど、琵琶湖《びわこ》にしかいない魚《さかな》がたくさんすんでいます。"}]};
+const KIND_RB={'建物':'建物《たてもの》','景色':'景色《けしき》','文化':'文化《ぶんか》','自然':'自然《しぜん》','食べもの':'食《た》べもの','まつり':'まつり'};
+const rb=t=>t.replace(/([\u4e00-\u9fff々ヶ]+)《([^》]+)》/g,'<ruby>$1<rt>$2</rt></ruby>');
+const plain=t=>t.replace(/《[^》]*》/g,'');
+function renderFeat(it){
+  const box=document.getElementById('feat'),info=document.getElementById('info');
+  const list=it&&FEATURES[it.id];
+  if(!list){box.innerHTML='';box.style.display='none';info.classList.remove('hasf');return}
+  box.innerHTML=list.map((f,i)=>`<div class="fi"><img src="images/${it.id}${i+1}.jpg" alt="${plain(f.n)}" onerror="this.parentNode.classList.add('noimg')"><div class="fh"><span class="tag k-${f.k}">${rb(KIND_RB[f.k]||f.k)}</span><span>${rb(f.n)}</span></div><p>${rb(f.t)}</p></div>`).join('');
+  box.style.display='block';info.classList.add('hasf');info.scrollTop=0;
+}
+
 /* ================= ① view ================= */
 modes.view={
   start(){
@@ -280,6 +318,7 @@ modes.view={
   show(it){
     document.getElementById('infoNm').textContent=it?it.name:'タップしてね';
     document.getElementById('infoRd').textContent=it?it.read:'市町村をタップすると名前が出ます';
+    renderFeat(it);
   },
   onRegion(it){
     Object.values(regionEl).forEach(r=>rmCls(r,'sel'));
