@@ -25,7 +25,7 @@ body.training #panel{display:flex}
 .score{font-weight:700;font-size:1rem;color:#c62828}
 .score small{color:#607d8b;font-weight:400;margin-left:8px}
 #stage{position:relative;flex:1;min-width:0;min-height:0;background:#fff;border-radius:14px;box-shadow:0 1px 4px rgba(0,0,0,.15);overflow:hidden}
-#map{width:100%;height:100%;display:block;touch-action:manipulation}
+#map{width:100%;height:100%;display:block;touch-action:none}
 /* ---- map styling ---- */
 .region{cursor:pointer;transition:fill .15s}
 .land{fill:#d9d9d9;stroke:none}
@@ -55,6 +55,13 @@ body.training #panel{display:flex}
 .pop{transform-box:fill-box;transform-origin:center;animation:pop 1.15s ease-out forwards;pointer-events:none}
 @keyframes pop{0%{opacity:0;transform:scale(.3)}22%{opacity:1;transform:scale(1.18)}55%{opacity:1;transform:scale(1)}100%{opacity:0;transform:scale(1.12)}}
 #floatG,#markG,#labelG{pointer-events:none}
+/* ---- zoom buttons ---- */
+#zoomUI{position:absolute;right:10px;bottom:10px;z-index:3;display:flex;flex-direction:column;gap:8px;touch-action:none}
+#zoomUI button{width:54px;height:54px;border:0;border-radius:50%;background:#fff;color:#2e7d6b;font:inherit;font-size:1.9rem;font-weight:800;line-height:1;
+  box-shadow:0 2px 6px rgba(0,0,0,.35);cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0}
+#zoomUI button:active{background:#e0f2ec}
+#zoomUI button:disabled{opacity:.35;box-shadow:0 1px 2px rgba(0,0,0,.2)}
+#zoomUI #zFit{font-size:.72rem;letter-spacing:0}
 /* ---- info card (view mode) ---- */
 #info{position:absolute;left:0;top:0;display:none;max-width:230px;background:#fff;border-radius:12px;padding:10px 14px;box-shadow:0 1px 5px rgba(0,0,0,.25)}
 body.mode-view #info{display:block}
@@ -159,6 +166,7 @@ ruby rt{font-size:.58em;font-weight:500;color:#546e7a;letter-spacing:0}
       <div class="rd" id="infoRd">市町村をタップすると名前が出ます</div>
       <div id="feat"></div>
     </div>
+    <div id="zoomUI"><button id="zIn" aria-label="大きくする">＋</button><button id="zOut" aria-label="小さくする">－</button><button id="zFit" aria-label="ぜんたいを見る">ぜんたい</button></div>
     <div id="done"><div class="card">
       <h2 id="doneTitle">ぜんぶ できた！</h2><p id="doneMsg"></p>
       <div class="btns"><button class="btn main" id="againBtn">もういちど</button><button class="btn" id="toViewBtn">地図を見る</button></div>
@@ -187,6 +195,24 @@ function toMap(cx,cy){const p=svg.createSVGPoint();p.x=cx;p.y=cy;return p.matrix
 function scale(){return svg.getScreenCTM().a}
 function center(it){return{x:(it.bb[0]+it.bb[2])/2,y:(it.bb[1]+it.bb[3])/2}}
 function popR(it){return Math.max(26,Math.min(it.r*1.1,80))}
+
+/* ---------- drop judging with tolerance (screen px) ---------- */
+function regionAtPoint(x,y){const t=document.elementFromPoint(x,y);const r=t&&t.closest&&t.closest('.region');return r?r.dataset.id:null}
+const SMALL_PX=90;   // 画面上でこれより小さい市町は「小さい市町」として、まわりに置いても正解にする
+const sizePx=it=>Math.max(it.bb[2]-it.bb[0],it.bb[3]-it.bb[1])*scale();
+function dropOk(it,x,y){
+  const X=regionAtPoint(x,y);
+  if(X===it.id)return true;
+  const sz=sizePx(it);
+  if(sz>=SMALL_PX)return false;                                   // 大きい市町は、ちゃんと中に置く
+  let R=sz<40?36:28;
+  if(X&&!S.done.has(X)&&sizePx(byId[X])<SMALL_PX)R=10;             // 別の小さい市町の中なら、境目ぎわ(10px)だけ許す
+  for(const f of [0.5,1])for(let a=0;a<12;a++){
+    const th=a*Math.PI/6;
+    if(regionAtPoint(x+Math.cos(th)*R*f,y+Math.sin(th)*R*f)===it.id)return true;
+  }
+  return false;
+}
 
 /* ---------- build base map ---------- */
 el('path',{d:BORDER,class:'borders'},G.border);
@@ -250,12 +276,15 @@ function setMode(m){
   svg.setAttribute('class',m==='view'?'view':'blank');
   document.querySelectorAll('#tabs button').forEach(b=>b.classList.toggle('active',b.dataset.mode===m));
   clearDyn();panel.innerHTML='';
+  resetView();
   modes[m].start();
 }
 document.querySelectorAll('#tabs button').forEach(b=>b.onclick=()=>setMode(b.dataset.mode));
 svg.addEventListener('click',e=>{
-  const r=e.target.closest&&e.target.closest('.region');if(!r)return;
-  const m=modes[S.mode];if(m.onRegion)m.onRegion(byId[r.dataset.id],e);
+  const r=e.target.closest&&e.target.closest('.region');
+  const m=modes[S.mode];
+  if(!r){if(S.mode==='label'&&S.sel)m.onRegion(null,e);return}
+  if(m.onRegion)m.onRegion(byId[r.dataset.id],e);
 });
 
 /* ---- chip gesture: decide drag vs. tray-scroll ONCE at the start, never cancel afterwards ---- */
@@ -342,7 +371,7 @@ function thumb(it){
 }
 modes.puzzle={
   start(){
-    panel.innerHTML=`<h2>② パズルモード</h2><p>名前つきのピースを、白地図の正しい場所までドラッグして重ねよう。</p><div class="score" id="score"></div><div class="tray" id="tray"></div>`;
+    panel.innerHTML=`<h2>② パズルモード</h2><p>名前つきのピースを、白地図の正しい場所までドラッグして重ねよう。小さい市町は、ちかくに置いてもOK。＋ーボタンや2本指で地図を大きくできます（ピースも同じ大きさになります）。</p><div class="score" id="score"></div><div class="tray" id="tray"></div>`;
     const tray=document.getElementById('tray');
     shuffle(DATA).forEach(it=>{
       const c=h('div','chip',thumb(it)+`<span>${ruby(it)}</span>`);c.dataset.id=it.id;
@@ -363,8 +392,12 @@ modes.puzzle={
   },
   move(e){
     if(!pz)return;
-    const s=scale(),ct=center(pz.it);
     pz.sx=e.clientX;pz.sy=e.clientY+pz.off;
+    this.place();
+  },
+  place(){   // ピースは、いまの地図と同じ倍率で表示する(拡大・縮小したときも追従)
+    if(!pz)return;
+    const s=scale(),ct=center(pz.it);
     pz.g.setAttribute('transform',`translate(${pz.sx-ct.x*s},${pz.sy-ct.y*s}) scale(${s})`);
   },
   cancel(){if(!pz)return;pz.g.remove();pz.c.classList.remove('lifted');pz=null},
@@ -376,7 +409,7 @@ modes.puzzle={
     if(sx<r.left||sx>r.right||sy<r.top||sy>r.bottom)return;
     const w=it.bb[2]-it.bb[0],hh=it.bb[3]-it.bb[1];
     const tol=Math.max(18,Math.min(0.2*Math.max(w,hh),55));
-    if(Math.hypot(q.x-ct.x,q.y-ct.y)<=tol){
+    if(Math.hypot(q.x-ct.x,q.y-ct.y)<=tol||dropOk(it,sx,sy)){
       S.done.add(it.id);
       G.fixed.appendChild(makePiece(it,false));
       c.remove();
@@ -393,7 +426,7 @@ modes.puzzle={
 let lb=null;
 modes.label={
   start(){
-    panel.innerHTML=`<h2>③ 名札はりモード</h2><p>名前をドラッグして、地図の正しい場所にのせよう。（名前をタップ → 地図をタップ、でもOK）</p><div class="score" id="score"></div><div class="tray" id="tray"></div>`;
+    panel.innerHTML=`<h2>③ 名札はりモード</h2><p>名前をドラッグして、地図の正しい場所にのせよう。（名前をタップ → 地図をタップ、でもOK）小さい市町は、ちかくでもOK。＋ーボタンや2本指で地図を大きくできます。</p><div class="score" id="score"></div><div class="tray" id="tray"></div>`;
     svg.classList.add('mode-label-drag');
     const tray=document.getElementById('tray');
     shuffle(DATA).forEach(it=>{
@@ -431,12 +464,15 @@ modes.label={
     if(!moved){this.toggleSel(it,c);return}
     const r=svg.getBoundingClientRect();
     if(gx<r.left||gx>r.right||gy<r.top||gy>r.bottom)return;
-    const t=document.elementFromPoint(gx,gy),reg=t&&t.closest&&t.closest('.region');
-    if(!reg)return;
-    this.judge(it,byId[reg.dataset.id],gx,gy);
+    this.attempt(it,gx,gy);
   },
-  judge(it,target,cx,cy){
-    if(it.id===target.id){
+  attempt(it,x,y){   // 小さい市町はまわりに置いても正解。何もない所に置いたときはノーカウント
+    const ok=dropOk(it,x,y);
+    if(!ok&&!regionAtPoint(x,y))return false;
+    this.judge(it,ok,x,y);return true;
+  },
+  judge(it,ok,cx,cy){
+    if(ok){
       S.done.add(it.id);S.sel=null;
       const ch=this.chipOf(it.id);if(ch)ch.remove();
       addCls(regionEl[it.id],'ok');
@@ -451,9 +487,9 @@ modes.label={
   onRegion(target,e){
     if(!S.sel)return;
     const it=S.sel;
+    if(!this.attempt(it,e.clientX,e.clientY))return;
     const ch=this.chipOf(it.id);if(ch)ch.classList.remove('sel');
     S.sel=null;
-    this.judge(it,target,e.clientX,e.clientY);
   }
 };
 
@@ -547,6 +583,103 @@ modes.type={
     ty.t=setTimeout(()=>this.next(),1800);
   }
 };
+
+/* ================= 地図の拡大・縮小 (ボタン / ピンチ / ホイール / ドラッグで移動) =================
+   viewBox を書きかえて拡大します。ピースや名札の座標計算は scale() を使っているので、そのまま追従します。 */
+const V={k:1,cx:500,cy:808.5,max:8,raf:0};
+const stageEl=document.getElementById('stage');
+const zIn=document.getElementById('zIn'),zOut=document.getElementById('zOut'),zFit=document.getElementById('zFit');
+function geom(){const r=stageEl.getBoundingClientRect();return{W:r.width,H:r.height,s0:Math.min(r.width/1000,r.height/1617)}}
+function clampView(){
+  const g=geom(),s=g.s0*V.k,w=g.W/s,h=g.H/s;
+  V.cx=w>=1000?500:Math.min(Math.max(V.cx,w/2),1000-w/2);
+  V.cy=h>=1617?808.5:Math.min(Math.max(V.cy,h/2),1617-h/2);
+  return{g,s,w,h};
+}
+function applyView(){
+  const g=geom();if(!g.W||!g.H)return;
+  V.k=Math.min(V.max,Math.max(1,V.k));
+  const {w,h}=clampView();
+  svg.setAttribute('viewBox',`${(V.cx-w/2).toFixed(2)} ${(V.cy-h/2).toFixed(2)} ${w.toFixed(2)} ${h.toFixed(2)}`);
+  zIn.disabled=V.k>=V.max-0.01;zOut.disabled=zFit.disabled=V.k<=1.01;
+  if(pz)modes.puzzle.place();
+}
+function resetView(){cancelAnimationFrame(V.raf);V.k=1;V.cx=500;V.cy=808.5;applyView()}
+function zoomAt(k2,px,py){   // 画面上の(px,py)の地図の点を動かさずに拡大
+  const {g,s,w,h}=clampView();
+  const mx=V.cx-w/2+px/s,my=V.cy-h/2+py/s;
+  V.k=Math.min(V.max,Math.max(1,k2));
+  const s2=g.s0*V.k,w2=g.W/s2,h2=g.H/s2;
+  V.cx=mx-px/s2+w2/2;V.cy=my-py/s2+h2/2;
+  applyView();
+}
+function tween(k2,cx2,cy2){
+  cancelAnimationFrame(V.raf);
+  k2=Math.min(V.max,Math.max(1,k2));
+  const k1=V.k,x1=V.cx,y1=V.cy,t0=performance.now();
+  const step=t=>{
+    const p=Math.min(1,(t-t0)/200),e=1-Math.pow(1-p,3);
+    V.k=k1*Math.pow(k2/k1,e);V.cx=x1+(cx2-x1)*e;V.cy=y1+(cy2-y1)*e;applyView();
+    if(p<1)V.raf=requestAnimationFrame(step);
+  };
+  V.raf=requestAnimationFrame(step);
+}
+zIn.onclick=()=>tween(V.k*1.7,V.cx,V.cy);
+zOut.onclick=()=>tween(V.k/1.7,V.cx,V.cy);
+zFit.onclick=()=>tween(1,500,808.5);
+new ResizeObserver(applyView).observe(stageEl);
+
+const ptrs=new Map();let pan=null,pinch=null,noClick=false;
+const stPt=e=>{const r=stageEl.getBoundingClientRect();return{x:e.clientX-r.left,y:e.clientY-r.top}};
+function startPinch(){
+  const [a,b]=[...ptrs.values()],{g,s,w,h}=clampView();
+  const mid={x:(a.x+b.x)/2,y:(a.y+b.y)/2};
+  pinch={d0:Math.hypot(a.x-b.x,a.y-b.y)||1,k0:V.k,mx:V.cx-w/2+mid.x/s,my:V.cy-h/2+mid.y/s};
+}
+svg.addEventListener('pointerdown',e=>{
+  cancelAnimationFrame(V.raf);
+  ptrs.set(e.pointerId,stPt(e));
+  if(ptrs.size===1){pan={id:e.pointerId,x0:e.clientX,y0:e.clientY,lx:e.clientX,ly:e.clientY,on:false}}
+  else if(ptrs.size===2){
+    pan=null;startPinch();
+    for(const id of ptrs.keys())try{svg.setPointerCapture(id)}catch(_){}
+  }
+});
+svg.addEventListener('pointermove',e=>{
+  if(!ptrs.has(e.pointerId))return;
+  ptrs.set(e.pointerId,stPt(e));
+  if(ptrs.size>=2&&pinch){
+    const [a,b]=[...ptrs.values()];
+    const mid={x:(a.x+b.x)/2,y:(a.y+b.y)/2},d=Math.hypot(a.x-b.x,a.y-b.y);
+    const g=geom();
+    V.k=Math.min(V.max,Math.max(1,pinch.k0*d/pinch.d0));
+    const s2=g.s0*V.k,w2=g.W/s2,h2=g.H/s2;
+    V.cx=pinch.mx-mid.x/s2+w2/2;V.cy=pinch.my-mid.y/s2+h2/2;
+    noClick=true;applyView();
+  }else if(pan&&pan.id===e.pointerId){
+    if(!pan.on){
+      if(Math.hypot(e.clientX-pan.x0,e.clientY-pan.y0)<8)return;
+      pan.on=true;try{svg.setPointerCapture(e.pointerId)}catch(_){}
+    }
+    const {s}=clampView();
+    V.cx-=(e.clientX-pan.lx)/s;V.cy-=(e.clientY-pan.ly)/s;
+    pan.lx=e.clientX;pan.ly=e.clientY;noClick=true;applyView();
+  }
+});
+const endPtr=e=>{
+  if(!ptrs.has(e.pointerId))return;
+  ptrs.delete(e.pointerId);
+  if(ptrs.size<2)pinch=null;
+  if(pan&&pan.id===e.pointerId)pan=null;
+  if(ptrs.size===0&&noClick)setTimeout(()=>{noClick=false},60);   // 移動・ピンチの直後のタップ扱いを防ぐ
+};
+svg.addEventListener('pointerup',endPtr);
+svg.addEventListener('pointercancel',endPtr);
+svg.addEventListener('click',e=>{if(noClick){e.stopPropagation();e.preventDefault()}},true);
+svg.addEventListener('wheel',e=>{
+  e.preventDefault();cancelAnimationFrame(V.raf);
+  const q=stPt(e);zoomAt(V.k*Math.exp(-e.deltaY*0.0018),q.x,q.y);
+},{passive:false});
 
 setMode('view');
 </script>
